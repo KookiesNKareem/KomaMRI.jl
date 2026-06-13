@@ -469,16 +469,16 @@ end
     @test sum(fd_grad .* direction) ≈ directional_fd rtol=1e-3 atol=1e-7
 end
 
-@testitem "BlochSimple CPU Enzyme AD probe" tags=[:core, :nomotion, :blochsimple, :ad, :enzyme, :skipci] begin
+@testitem "BlochSimple CPU Enzyme AD" tags=[:core, :nomotion, :blochsimple, :ad, :enzyme] begin
     include(joinpath(@__DIR__, "test_files", "ad_utils.jl"))
     using Enzyme: ReverseWithPrimal, gradient
 
     function enzyme_blochsimple_ad_gradient(rf_scale)
-        result = gradient(ReverseWithPrimal, blochsimple_ad_loss, rf_scale)
+        result = gradient(ReverseWithPrimal, blochsimple_ad_core_loss, rf_scale)
         return result.derivs[1]
     end
 
-    @test_broken blochsimple_ad_gradient_matches_fd(
+    @test blochsimple_ad_core_gradient_matches_fd(
         enzyme_blochsimple_ad_gradient(copy(BLOCHSIMPLE_AD_RF0)),
     )
 end

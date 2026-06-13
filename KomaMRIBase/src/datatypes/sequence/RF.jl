@@ -56,7 +56,7 @@ mutable struct RF{AT,TT,ΔFT}
     T::TT
     Δf::ΔFT
     delay::Float64
-    center::Union{Float64, Nothing}
+    center::Float64
     ϕ::Float64
     use::RFUse
     RF(A, T, Δf, delay, center, ϕ, use, ::Val{:preserve}) =
@@ -65,6 +65,7 @@ mutable struct RF{AT,TT,ΔFT}
         if _has_negative_timings(T) || delay < 0
             error("RF timings must be non-negative.")
         end
+        center = isnothing(center) ? _rf_center(A, T) : center
         Arel, ϕrel = _canonicalize_rf_center_phase(A, T, center, ϕ)
         return new{typeof(Arel),typeof(T),typeof(Δf)}(Arel, T, Δf, delay, center, ϕrel, use)
     end
@@ -252,6 +253,6 @@ It does not include the RF delay and uses the weighted average of times by ampli
 - `x`: (`::RF`) RF struct
 
 # Returns
-- `t`: (`::Real` or `Nothing`, `[s]`) time where is the center of the RF pulse `x`, or `nothing` if the RF amplitude is zero
+- `t`: (`::Real`, `[s]`) time where is the center of the RF pulse `x`
 """
-get_RF_center(rf::RF) = something(rf.center, _rf_center(rf.A, rf.T))
+get_RF_center(rf::RF) = rf.center

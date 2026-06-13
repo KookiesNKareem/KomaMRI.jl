@@ -6,10 +6,12 @@ const BLOCHSIMPLE_AD_DIRECTION = [0.2, -0.1, 0.15]
 function blochsimple_ad_sequence(rf_scale)
     Trf = 0.6e-3
     Tadc = 0.8e-3
-    seq = Sequence()
-    @addblock seq += RF(complex.(rf_scale) .* 1e-6, Trf)
-    @addblock seq += ADC(4, Tadc)
-    return seq
+    gr = Grad(0.0, 0.0)
+    GR = [gr gr; gr gr; gr gr]
+    rf_off = RF(zeros(ComplexF64, length(rf_scale)), 0.0, 0.0, 0.0, 0.0, 0.0, Undefined(), Val(:preserve))
+    RFs = [RF(complex.(rf_scale) .* 1e-6, Trf) rf_off]
+    ADCs = [ADC(0, 0.0), ADC(4, Tadc)]
+    return Sequence(GR, RFs, ADCs)
 end
 
 function blochsimple_ad_loss(rf_scale)
@@ -33,11 +35,87 @@ function blochsimple_ad_loss(rf_scale)
     return sum(abs2, M.xy) + sum(abs2, M.z .- target_z)
 end
 
+function blochsimple_ad_discrete_sequence(rf_scale)
+    z = zeros(Float64, 12)
+    B1 = zeros(ComplexF64, 12)
+    B1[3] = complex(rf_scale[1] * 1e-6)
+    B1[4] = complex((0.5rf_scale[1] + 0.5rf_scale[2]) * 1e-6)
+    B1[5] = complex(rf_scale[2] * 1e-6)
+    B1[6] = complex((0.5rf_scale[2] + 0.5rf_scale[3]) * 1e-6)
+    B1[7] = complex(rf_scale[3] * 1e-6)
+    ADC = Bool[0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0]
+    t = [
+        -1.0e-14,
+        0.0,
+        1.0e-14,
+        0.00020000000001,
+        0.0002853658536585366,
+        0.0004853658536585366,
+        0.0005999999999899999,
+        0.0006,
+        0.0008666666666666666,
+        0.0011333333333333332,
+        0.0014,
+        0.00140000000001,
+    ]
+    Δt = [
+        1.0e-14,
+        1.0e-14,
+        0.0002,
+        8.536585364853658e-5,
+        0.00020000000000000004,
+        0.00011463414633146329,
+        1.0000030317702802e-14,
+        0.0002666666666666667,
+        0.00026666666666666657,
+        0.0002666666666666668,
+        1.0000030317702802e-14,
+    ]
+    return DiscreteSequence(z, copy(z), copy(z), B1, copy(z), copy(z), ADC, t, Δt)
+end
+
+function blochsimple_ad_core_loss(rf_scale)
+    obj = Phantom(
+        x=[0.0, 1e-2],
+        ρ=[1.0, 0.75],
+        T1=[1.0, 0.8],
+        T2=[0.08, 0.12],
+        Δw=2π .* [10.0, -12.0],
+    )
+    seqd = blochsimple_ad_discrete_sequence(rf_scale)
+    Xt, obj = KomaMRICore.initialize_spins_state(obj, KomaMRICore.BlochSimple())
+    sig = zeros(ComplexF64, 4, 1, 1)
+    KomaMRICore.run_sim_time_iter!(
+        obj,
+        seqd,
+        sig,
+        Xt,
+        KomaMRICore.BlochSimple(),
+        KomaMRICore.KA.CPU();
+        Nblocks=3,
+        Nthreads=1,
+        precession_groupsize=256,
+        excitation_groupsize=256,
+        parts=UnitRange{Int64}[1:2, 2:8, 8:11],
+        excitation_bool=Bool[0, 1, 0],
+        callbacks=(),
+    )
+    target_z = [0.4, 0.2]
+    return sum(abs2, Xt.xy) + sum(abs2, Xt.z .- target_z)
+end
+
 blochsimple_ad_fd_gradient(rf_scale=BLOCHSIMPLE_AD_RF0) =
     grad(central_fdm(5, 1), blochsimple_ad_loss, rf_scale)[1]
+
+blochsimple_ad_core_fd_gradient(rf_scale=BLOCHSIMPLE_AD_RF0) =
+    grad(central_fdm(5, 1), blochsimple_ad_core_loss, rf_scale)[1]
 
 function blochsimple_ad_gradient_matches_fd(ad_grad; rf_scale=BLOCHSIMPLE_AD_RF0)
     fd_grad = blochsimple_ad_fd_gradient(rf_scale)
     return all(isfinite, ad_grad) && isapprox(ad_grad, fd_grad; rtol=1e-3, atol=1e-7)
 end
 
+function blochsimple_ad_core_gradient_matches_fd(ad_grad; rf_scale=BLOCHSIMPLE_AD_RF0)
+    fd_grad = blochsimple_ad_core_fd_gradient(rf_scale)
+    return all(isfinite, ad_grad) && isapprox(ad_grad, fd_grad; rtol=1e-3, atol=1e-7)
+end
