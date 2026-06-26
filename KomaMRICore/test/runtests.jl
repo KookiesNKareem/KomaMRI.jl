@@ -451,6 +451,71 @@ end
     @test NRMSE(sig, sig_jemris) < 1 #NRMSE < 1%
 end
 
+@testitem "BlochSimple CPU finite-difference AD baseline" tags=[:core, :nomotion, :blochsimple, :ad] begin
+    include(joinpath(@__DIR__, "test_files", "ad_utils.jl"))
+
+    rf0 = BLOCHSIMPLE_AD_RF0
+    fd_grad = blochsimple_ad_fd_gradient(rf0)
+    direction = BLOCHSIMPLE_AD_DIRECTION
+    ϵ = 1e-3
+    directional_fd = (
+        blochsimple_ad_loss(rf0 .+ ϵ .* direction) -
+        blochsimple_ad_loss(rf0 .- ϵ .* direction)
+    ) / (2ϵ)
+
+    @test isfinite(blochsimple_ad_loss(rf0))
+    @test all(isfinite, fd_grad)
+    @test any(!iszero, fd_grad)
+    @test sum(fd_grad .* direction) ≈ directional_fd rtol=1e-3 atol=1e-7
+end
+
+@testitem "BlochSimple CPU Enzyme AD probe" tags=[:core, :nomotion, :blochsimple, :ad, :enzyme, :skipci] begin
+    include(joinpath(@__DIR__, "test_files", "ad_utils.jl"))
+    using Enzyme: ReverseWithPrimal, gradient
+
+    function enzyme_blochsimple_ad_gradient(rf_scale)
+        result = gradient(ReverseWithPrimal, blochsimple_ad_loss, rf_scale)
+        return result.derivs[1]
+    end
+
+    @test_broken blochsimple_ad_gradient_matches_fd(
+        enzyme_blochsimple_ad_gradient(copy(BLOCHSIMPLE_AD_RF0)),
+    )
+end
+
+@testitem "BlochSimple CPU Reactant Enzyme AD probe" tags=[:core, :nomotion, :blochsimple, :ad, :reactant, :enzyme, :skipci] begin
+    include(joinpath(@__DIR__, "test_files", "ad_utils.jl"))
+    using Enzyme: ReverseWithPrimal, gradient
+    using Reactant
+
+    Reactant.set_default_backend("cpu")
+    Reactant.allowscalar(false)
+
+    function reactant_enzyme_blochsimple_ad_gradient(rf_scale)
+        result = gradient(ReverseWithPrimal, blochsimple_ad_loss, rf_scale)
+        return result.derivs[1]
+    end
+
+    @test_broken begin
+        rf_ra = Reactant.to_rarray(copy(BLOCHSIMPLE_AD_RF0))
+        compiled = Reactant.@compile sync=true reactant_enzyme_blochsimple_ad_gradient(rf_ra)
+        blochsimple_ad_gradient_matches_fd(Array(compiled(rf_ra)))
+    end
+end
+
+@testitem "BlochSimple CPU Mooncake AD probe" tags=[:core, :nomotion, :blochsimple, :ad, :mooncake, :skipci] begin
+    include(joinpath(@__DIR__, "test_files", "ad_utils.jl"))
+    using DifferentiationInterface: AutoMooncake, gradient, prepare_gradient
+    import Mooncake
+
+    @test_broken begin
+        rf0 = copy(BLOCHSIMPLE_AD_RF0)
+        backend = AutoMooncake(; config=nothing)
+        prep = prepare_gradient(blochsimple_ad_loss, backend, rf0)
+        blochsimple_ad_gradient_matches_fd(gradient(blochsimple_ad_loss, prep, backend, rf0))
+    end
+end
+
 @testitem "Spinor rotation kernel Reactant Enzyme" tags=[:core, :nomotion, :ad, :reactant, :skipci] begin
     using Enzyme: Const, ReverseWithPrimal, gradient, set_runtime_activity
     using Reactant
