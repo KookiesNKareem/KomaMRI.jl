@@ -517,6 +517,54 @@ end
     @test blochsimple_ad_reactant_core_gradient_matches_fd(Array(compiled(rf_ra)))
 end
 
+@testitem "BlochSimple Reactant GPU forward compile probe" tags=[:core, :nomotion, :blochsimple, :ad, :reactant, :gpu] begin
+    include(joinpath(@__DIR__, "test_files", "ad_utils.jl"))
+    using Reactant
+
+    Reactant.allowscalar(false)
+
+    if isnothing(reactant_backend_available("gpu"))
+        @test_skip false
+    else
+        with_reactant_backend("gpu") do platform
+            @test platform != "cpu"
+
+            rf_ra = Reactant.to_rarray(copy(BLOCHSIMPLE_AD_RF0))
+            compiled = Reactant.@compile sync=true blochsimple_ad_reactant_core_loss(rf_ra)
+            reactant_loss = Reactant.to_number(compiled(rf_ra))
+            native_loss = blochsimple_ad_reactant_core_loss(copy(BLOCHSIMPLE_AD_RF0))
+
+            @test isfinite(reactant_loss)
+            @test reactant_loss ≈ native_loss rtol=1e-10 atol=1e-12
+        end
+    end
+end
+
+@testitem "BlochSimple Reactant GPU Enzyme AD probe" tags=[:core, :nomotion, :blochsimple, :ad, :reactant, :enzyme, :gpu] begin
+    include(joinpath(@__DIR__, "test_files", "ad_utils.jl"))
+    using Enzyme: ReverseWithPrimal, gradient
+    using Reactant
+
+    Reactant.allowscalar(false)
+
+    function reactant_enzyme_blochsimple_ad_gradient(rf_scale)
+        result = gradient(ReverseWithPrimal, blochsimple_ad_reactant_core_loss, rf_scale)
+        return result.derivs[1]
+    end
+
+    if isnothing(reactant_backend_available("gpu"))
+        @test_skip false
+    else
+        with_reactant_backend("gpu") do platform
+            @test platform != "cpu"
+
+            rf_ra = Reactant.to_rarray(copy(BLOCHSIMPLE_AD_RF0))
+            compiled = Reactant.@compile sync=true reactant_enzyme_blochsimple_ad_gradient(rf_ra)
+            @test blochsimple_ad_reactant_core_gradient_matches_fd(Array(compiled(rf_ra)))
+        end
+    end
+end
+
 @testitem "BlochSimple CPU Mooncake AD probe" tags=[:core, :nomotion, :blochsimple, :ad, :mooncake, :skipci] begin
     include(joinpath(@__DIR__, "test_files", "ad_utils.jl"))
     using DifferentiationInterface: AutoMooncake, gradient, prepare_gradient

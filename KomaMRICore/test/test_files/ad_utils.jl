@@ -208,6 +208,28 @@ function blochsimple_ad_reactant_core_loss(rf_scale)
     return sum(abs2, Xt.xy) + sum(abs2, Xt.z .- target_z)
 end
 
+function reactant_backend_available(backend)
+    previous = Reactant.XLA.default_backend()
+    try
+        Reactant.set_default_backend(backend)
+        return lowercase(String(Reactant.XLA.platform_name(Reactant.XLA.default_backend())))
+    catch
+        return nothing
+    finally
+        Reactant.set_default_backend(previous)
+    end
+end
+
+function with_reactant_backend(f, backend)
+    previous = Reactant.XLA.default_backend()
+    Reactant.set_default_backend(backend)
+    try
+        return f(lowercase(String(Reactant.XLA.platform_name(Reactant.XLA.default_backend()))))
+    finally
+        Reactant.set_default_backend(previous)
+    end
+end
+
 blochsimple_ad_fd_gradient(rf_scale=BLOCHSIMPLE_AD_RF0) =
     grad(central_fdm(5, 1), blochsimple_ad_loss, rf_scale)[1]
 
