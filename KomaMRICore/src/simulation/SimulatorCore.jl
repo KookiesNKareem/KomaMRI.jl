@@ -71,6 +71,14 @@ function run_spin_precession_parallel!(
     prealloc::PreallocResult;
     Nthreads=Threads.nthreads(),
 )
+    if Nthreads == 1
+        p = 1:length(obj)
+        run_spin_precession!(
+            obj, seq, split_sig_per_thread(sig, 1, p, sim_method), Xt, sim_method, groupsize, backend, prealloc
+        )
+        return nothing
+    end
+
     parts = kfoldperm(length(obj), Nthreads)
 
     ThreadsX.foreach(enumerate(parts)) do (i, p)
@@ -93,6 +101,14 @@ function run_spin_excitation_parallel!(
     prealloc::PreallocResult;
     Nthreads=Threads.nthreads(),
 )
+    if Nthreads == 1
+        p = 1:length(obj)
+        run_spin_excitation!(
+            obj, seq, split_sig_per_thread(sig, 1, p, sim_method), Xt, sim_method, groupsize, backend, prealloc
+        )
+        return nothing
+    end
+
     parts = kfoldperm(length(obj), Nthreads)
 
     ThreadsX.foreach(enumerate(parts)) do (i, p)
@@ -330,8 +346,6 @@ function simulate(
     seqd = discretize(seq; sampling_params=sim_params, motion=obj.motion) # Sampling of Sequence waveforms
     parts, excitation_bool = get_sim_ranges(seqd; max_block_length=sim_params["max_block_length"], max_rf_block_length=sim_params["max_rf_block_length"]) # Generating simulation blocks
     Nblocks = length(parts)
-    t_sim_parts = [seqd.t[p[1]] for p in parts]
-    append!(t_sim_parts, seqd.t[end])
     # Spins' state init (Magnetization, EPG, etc.), could include modifications to obj (e.g. T2*)
     Xt, obj = initialize_spins_state(obj, sim_params["sim_method"])
     # Signal init
@@ -404,6 +418,8 @@ function simulate(
     elseif sim_params["return_type"] == "mat"
         out = sig
     elseif sim_params["return_type"] == "raw"
+        t_sim_parts = [seqd.t[p[1]] for p in parts]
+        append!(t_sim_parts, seqd.t[end])
         # Save info to raw data, sim_params + other useful info about the simulation
         sim_params_raw = copy(sim_params)
         sim_params_raw["sim_method"] = string(sim_params["sim_method"])

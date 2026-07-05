@@ -6,6 +6,9 @@ struct BlochSimple <: SimulationMethod end
 
 export BlochSimple
 
+@inline _phase_cis(x::Real) = cis(x)
+@inline _phase_cis(x) = complex(cos(x), sin(x))
+
 """
     run_spin_precession(obj, seq, Xt, sig)
 
@@ -45,14 +48,16 @@ function run_spin_precession!(
     #Mxy precession and relaxation, and Mz relaxation
     tp   = cumsum(seq.Δt) # t' = t - t0
     dur  = sum(seq.Δt)   # Total length, used for signal relaxation
-    Mxy  = M.xy .* exp.(-tp' ./ p.T2) .* cis.(ϕ) #This assumes Δw and T2 are constant in time
+    Mxy  = M.xy .* exp.(-tp' ./ p.T2) .* _phase_cis.(ϕ) #This assumes Δw and T2 are constant in time
     M.xy .= Mxy[:, end]
     M.z  .= M.z .* exp.(-dur ./ p.T1) .+ p.ρ .* (1 .- exp.(-dur ./ p.T1))
     #Reset Spin-State (Magnetization). Only for FlowPath
     outflow_spin_reset!(Mxy, seq.t[2:end]', p.motion)
     outflow_spin_reset!(M, seq.t[2:end]', p.motion; replace_by=p.ρ)
     #Acquired signal
-    sig .= @views transpose(sum(Mxy[:, findall(seq.ADC[2:end])]; dims=1)) #<--- TODO: add coil sensitivities
+    if !isempty(sig)
+        sig .= @views transpose(sum(Mxy[:, findall(seq.ADC[2:end])]; dims=1)) #<--- TODO: add coil sensitivities
+    end
     return nothing
 end
 
@@ -85,7 +90,7 @@ function run_spin_excitation!(
     sample = 1
     # Rotating frame -> RF frame
     ψ_start = @view seq.ψ[1:1]
-    @. M.xy = M.xy * cis(-ψ_start)
+    @. M.xy = M.xy * _phase_cis(-ψ_start)
     #Simulation
     for i in eachindex(seq.Δt)
         s = @views ( # This was the previous behaviour of seq[i], but it was hidden
@@ -118,7 +123,7 @@ function run_spin_excitation!(
     end
     # RF frame -> Rotating frame
     ψ_end = @view seq.ψ[end:end]
-    @. M.xy = M.xy * cis(ψ_end)
+    @. M.xy = M.xy * _phase_cis(ψ_end)
     return nothing
 end
 

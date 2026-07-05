@@ -84,7 +84,7 @@ Returns an array of times when the samples of the sequence `seq` are acquired.
 """
 function get_adc_sampling_times(seq)
     T0 = get_block_start_times(seq)
-    t = zeros(Float64, sum(seq.ADC.N))
+    t = zeros(Float64, sum(adc.N for adc in seq.ADC))
     idx = 1
     for i = 1:length(seq)
         adc = seq.ADC[i]
