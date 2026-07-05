@@ -483,6 +483,20 @@ end
     )
 end
 
+@testitem "BlochSimple CPU Enzyme AD through discretize" tags=[:core, :nomotion, :blochsimple, :ad, :enzyme, :skipci] begin
+    include(joinpath(@__DIR__, "test_files", "ad_utils.jl"))
+    using Enzyme: ReverseWithPrimal, gradient
+
+    function enzyme_blochsimple_discretize_gradient(rf_scale)
+        result = gradient(ReverseWithPrimal, blochsimple_ad_discretize_loss, rf_scale)
+        return result.derivs[1]
+    end
+
+    @test blochsimple_ad_discretize_gradient_matches_fd(
+        enzyme_blochsimple_discretize_gradient(copy(BLOCHSIMPLE_AD_RF0)),
+    )
+end
+
 @testitem "BlochSimple CPU Reactant forward compile" tags=[:core, :nomotion, :blochsimple, :ad, :reactant, :skipci] begin
     include(joinpath(@__DIR__, "test_files", "ad_utils.jl"))
     using Reactant

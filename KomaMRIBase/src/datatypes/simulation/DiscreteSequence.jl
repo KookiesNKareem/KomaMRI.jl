@@ -97,7 +97,7 @@ based on simulation parameters.
 # Returns
 - `seqd`: (`::DiscreteSequence`) DiscreteSequence struct
 """
-function discretize(seq::Sequence; sampling_params=default_sampling_params(), motion=NoMotion())
+@inline function discretize(seq::Sequence; sampling_params=default_sampling_params(), motion=NoMotion())
     t, Δt      = get_variable_times(seq; Δt=sampling_params["Δt"], Δt_rf=sampling_params["Δt_rf"], motion=motion)
     B1, Δf, ψ  = get_rfs(seq, t)
     Gx, Gy, Gz = get_grads(seq, t)
