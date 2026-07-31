@@ -112,10 +112,10 @@ function linear_interpolate_samples(
     interpolate=true,
 ) where {TT,AT<:ReactantRVector}
     coefficients = zeros(Float64, length(t), length(samples.A))
-    defaults = fill(default, length(t))
+    default_weights = ones(Float64, length(t))
     if isempty(samples.t)
         return _copy_like(samples.A, coefficients) * samples.A .+
-               _copy_like(samples.A, defaults)
+               _copy_like(samples.A, default_weights) .* default
     end
 
     last_sample = min(lastindex(samples.t), lastindex(samples.A))
@@ -139,7 +139,7 @@ function linear_interpolate_samples(
                 l = interpolate ? min(sample + k - i, sample_end) : sample_end - (j - k)
                 if l >= sample
                     coefficients[k, l] = 1.0
-                    defaults[k] = zero(default)
+                    default_weights[k] = 0.0
                 end
             end
             sample = sample_end + 1
@@ -148,12 +148,12 @@ function linear_interpolate_samples(
             weight = (ti - lo_time) / (hi_time - lo_time)
             coefficients[i:j, sample - 1] .= 1 - weight
             coefficients[i:j, sample] .= weight
-            defaults[i:j] .= zero(default)
+            default_weights[i:j] .= 0.0
         end
         i = j + 1
     end
     return _copy_like(samples.A, coefficients) * samples.A .+
-           _copy_like(samples.A, defaults)
+           _copy_like(samples.A, default_weights) .* default
 end
 
 end

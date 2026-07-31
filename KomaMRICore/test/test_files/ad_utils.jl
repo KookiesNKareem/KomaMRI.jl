@@ -109,3 +109,110 @@ end
 
 blochsimple_simulate_ad_fd_gradient(rf_scale=BLOCHSIMPLE_DISCRETIZE_AD_RF0) =
     grad(central_fdm(5, 1), blochsimple_simulate_ad_loss, rf_scale)[1]
+
+const BLOCHSIMPLE_NODE_AD_RF0 = [0.0, 3.5, 0.0]
+
+function blochsimple_node_ad_parameters()
+    rf_duration = 0.6e-3
+    z = collect(range(-4e-3, 4e-3; length=3))
+    obj = Phantom(
+        x=zeros(length(z)),
+        y=zeros(length(z)),
+        z=z,
+        ρ=ones(length(z)),
+        T1=ones(length(z)),
+        T2=fill(0.1, length(z)),
+        Δw=zeros(length(z)),
+    )
+    rf = RF(
+        zeros(ComplexF64, 7),
+        rf_duration,
+        0.0,
+        0.0,
+        rf_duration / 2,
+        0.0,
+        Excitation(),
+        Val(:preserve),
+    )
+    zero_gradient = Grad(0.0, 0.0)
+    slice_gradient = Grad(8e-3, rf_duration)
+    seq = Sequence(
+        reshape([zero_gradient, zero_gradient, slice_gradient], 3, 1),
+        reshape([rf], 1, 1),
+        [ADC(0, 0.0)],
+        [rf_duration],
+        [Extension[]],
+        Dict{String,Any}(),
+    )
+    sim_params = Dict{String,Any}(
+        "sim_method" => KomaMRICore.BlochSimple(),
+        "gpu" => false,
+        "Nthreads" => 1,
+        "return_type" => "state",
+        "precision" => "f64",
+        "sampling_rule" => MaxStepSizeRule(50e-6, 25e-6),
+    )
+    params = (;
+        seq,
+        obj,
+        sys=Scanner(),
+        sim_params,
+        target_profile=zeros(ComplexF64, length(z)),
+        node_times=range(0.0, rf_duration; length=3),
+        rf_times=range(0.0, rf_duration; length=7),
+        rf_scale=1e-6,
+    )
+    target_profile = copy(blochsimple_node_ad_forward([0.0, 5.0, 0.0], params).xy)
+    return merge(params, (; target_profile))
+end
+
+function blochsimple_node_ad_forward(x, params)
+    seq_aux = copy(params.seq)
+    rf_samples = KomaMRIBase.linear_interpolate_samples(
+        (t=params.node_times, A=x),
+        params.rf_times,
+    )
+    seq_aux.RF[1].A .= complex.(rf_samples) .* params.rf_scale
+    return simulate(
+        params.obj,
+        seq_aux,
+        params.sys;
+        sim_params=params.sim_params,
+        verbose=false,
+    )
+end
+
+function blochsimple_node_ad_loss(x, params)
+    mag = blochsimple_node_ad_forward(x, params)
+    return sum(abs2, mag.xy .- params.target_profile) / length(mag.xy)
+end
+
+blochsimple_node_ad_fd_gradient(params, x=BLOCHSIMPLE_NODE_AD_RF0) =
+    grad(central_fdm(5, 1), x -> blochsimple_node_ad_loss(x, params), x)[1]
+
+function blochsimple_node_ad_reactant_parameters(params)
+    rf = params.seq.RF[1]
+    rf_ra = RF(
+        Reactant.to_rarray(rf.A),
+        rf.T,
+        rf.Δf,
+        rf.delay,
+        rf.center,
+        rf.ϕ,
+        rf.use,
+        Val(:preserve),
+    )
+    seq_ra = Sequence(
+        params.seq.GR,
+        reshape([rf_ra], 1, 1),
+        params.seq.ADC,
+        params.seq.DUR,
+        params.seq.EXT,
+        params.seq.DEF,
+    )
+    return merge(params, (;
+        seq=seq_ra,
+        obj=Reactant.to_rarray(params.obj),
+        target_profile=Reactant.to_rarray(params.target_profile),
+    ))
+end

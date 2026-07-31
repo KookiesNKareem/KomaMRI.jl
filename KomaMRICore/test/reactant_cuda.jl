@@ -8,6 +8,8 @@ using Reactant
 Reactant.set_default_backend("cuda")
 Reactant.allowscalar(false)
 
+include(joinpath(@__DIR__, "test_files", "ad_utils.jl"))
+
 const REACTANT_CUDA_RF0 = [1.3, 1.7, 1.1]
 
 function reactant_cuda_traced_vector(template, values, ::Type{T}=Float64) where {T}
@@ -145,6 +147,16 @@ end
 reactant_cuda_simulate_gradient(rf) =
     Enzyme.gradient(Enzyme.ReverseWithPrimal, reactant_cuda_simulate_loss, rf).derivs[1]
 
+function reactant_cuda_node_loss_and_gradient(x, params)
+    result = Enzyme.gradient(
+        Enzyme.ReverseWithPrimal,
+        blochsimple_node_ad_loss,
+        x,
+        Enzyme.Const(params),
+    )
+    return result.val, result.derivs[1]
+end
+
 @testset "Reactant + Enzyme CUDA through parallel BlochSimple kernels" begin
     devices = Reactant.devices()
     @info "Reactant CUDA devices" devices=string.(devices)
@@ -160,6 +172,18 @@ reactant_cuda_simulate_gradient(rf) =
 
     @test Reactant.to_number(compiled_loss(rf)) ≈ reactant_cuda_loss(REACTANT_CUDA_RF0)
     @test Array(compiled_gradient(rf)) ≈ finite_difference rtol=1e-8 atol=1e-10
+end
+
+@testset "Reactant + Enzyme CUDA through RF nodes and simulate state" begin
+    params = blochsimple_node_ad_parameters()
+    params_ra = blochsimple_node_ad_reactant_parameters(params)
+    x = Reactant.to_rarray(copy(BLOCHSIMPLE_NODE_AD_RF0))
+    compiled = Reactant.@compile sync=true reactant_cuda_node_loss_and_gradient(x, params_ra)
+    loss, gradient = compiled(x, params_ra)
+
+    @test Reactant.to_number(loss) ≈
+        blochsimple_node_ad_loss(BLOCHSIMPLE_NODE_AD_RF0, params)
+    @test Array(gradient) ≈ blochsimple_node_ad_fd_gradient(params) rtol=1e-8 atol=1e-10
 end
 
 @testset "Reactant + Enzyme CUDA through simulate with ADC and BlochSimple" begin

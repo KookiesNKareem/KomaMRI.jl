@@ -768,6 +768,27 @@ end
                 loss, gradient = compiled(rf)
                 return Reactant.to_number(loss), Array(gradient)
             end
+
+            function reactant_enzyme_node_loss_and_gradient(x, params)
+                result = Enzyme.gradient(
+                    Enzyme.ReverseWithPrimal,
+                    blochsimple_node_ad_loss,
+                    x,
+                    Enzyme.Const(params),
+                )
+                return result.val, result.derivs[1]
+            end
+
+            function run_reactant_enzyme_node_probe(params)
+                x = Reactant.to_rarray(copy(BLOCHSIMPLE_NODE_AD_RF0))
+                params_ra = blochsimple_node_ad_reactant_parameters(params)
+                compiled = Reactant.@compile sync=true reactant_enzyme_node_loss_and_gradient(
+                    x,
+                    params_ra,
+                )
+                loss, gradient = compiled(x, params_ra)
+                return Reactant.to_number(loss), Array(gradient)
+            end
         end)
 
         @testset "Sequence and ADC through simulate with BlochSimple Reactant Enzyme" begin
@@ -791,6 +812,25 @@ end
             @test seqd.t[1:2] == [0.0, 0.0]
             @test reactant_loss ≈ blochsimple_simulate_ad_loss(rf0)
             @test reactant_gradient ≈ blochsimple_simulate_ad_fd_gradient(rf0) rtol=1e-8 atol=1e-10
+        end
+
+        @testset "RF control nodes through simulate state with BlochSimple Reactant Enzyme" begin
+            params = blochsimple_node_ad_parameters()
+            rf_samples = KomaMRIBase.linear_interpolate_samples(
+                (t=params.node_times, A=BLOCHSIMPLE_NODE_AD_RF0),
+                params.rf_times,
+            )
+            probe = Base.invokelatest(
+                getfield,
+                @__MODULE__,
+                :run_reactant_enzyme_node_probe,
+            )
+            reactant_loss, reactant_gradient = Base.invokelatest(probe, params)
+
+            @test length(BLOCHSIMPLE_NODE_AD_RF0) < length(rf_samples)
+            @test rf_samples[[1, 4, 7]] == BLOCHSIMPLE_NODE_AD_RF0
+            @test reactant_loss ≈ blochsimple_node_ad_loss(BLOCHSIMPLE_NODE_AD_RF0, params)
+            @test reactant_gradient ≈ blochsimple_node_ad_fd_gradient(params) rtol=1e-8 atol=1e-10
         end
 
         T = Float32
